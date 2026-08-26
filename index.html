@@ -390,6 +390,8 @@ function selectFeedTreatment(treatment) {
   document.querySelectorAll('#feedTreatmentChips .chip').forEach(c => c.classList.remove('active'));
   document.querySelector(`#feedTreatmentChips .chip[data-treatment="${treatment}"]`).classList.add('active');
   buildFeedRabbitInputs();
+  // Clear water intake for a fresh record per treatment
+  document.getElementById('r_water').value = '';
 }
 
 function selectWeightTreatment(treatment) {
@@ -397,6 +399,8 @@ function selectWeightTreatment(treatment) {
   document.querySelectorAll('#weightTreatmentChips .chip').forEach(c => c.classList.remove('active'));
   document.querySelector(`#weightTreatmentChips .chip[data-treatment="${treatment}"]`).classList.add('active');
   buildWeightRabbitInputs();
+  // Clear water intake for a fresh record per treatment
+  document.getElementById('r_water').value = '';
 }
 
 function buildFeedRabbitInputs() {
@@ -473,7 +477,7 @@ function submitLog(farm) {
 
   document.getElementById('loadingOverlay').classList.remove('hidden');
 
-  // collect per rabbit feed (water group-level later)
+  // collect per rabbit feed
   const feedEntries = [];
   for (let r = 1; r <= 20; r++) {
     const feedInput = document.getElementById(`feed_rabbit_${r}`);
