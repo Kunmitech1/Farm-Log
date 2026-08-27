@@ -297,9 +297,10 @@ const treatmentRabbits = {
 let selectedFeedTreatment = 'control';
 let selectedWeightTreatment = 'control';
 
-// Persistent storage for feed and weight values per treatment
-let savedFeedValues = {}; // e.g. { control: {1:50, 2:60}, t1: {5:70} }
+// Persistent storage for feed, weight, and water per feed treatment
+let savedFeedValues = {};
 let savedWeightValues = {};
+let savedWaterValues = {}; // key: feed treatment (e.g., 'control', 't1', etc.)
 
 function init() {
   document.getElementById('headerDate').textContent =
@@ -310,7 +311,6 @@ function init() {
       renderWorkerList();
   });
   renderGroupList();
-  // Initial build (no saved values yet)
   buildFeedRabbitInputs('control');
   buildWeightRabbitInputs('control');
   addLitterEntry();
@@ -391,27 +391,36 @@ function pickRabbitFeed(type) {
 }
 
 function selectFeedTreatment(treatment) {
-  // Save current feed values before switching
+  // Save current feed values and water for the old treatment
   saveCurrentFeedValues();
+  saveCurrentWaterValue();
+
   // Switch treatment
   selectedFeedTreatment = treatment;
   document.querySelectorAll('#feedTreatmentChips .chip').forEach(c => c.classList.remove('active'));
   document.querySelector(`#feedTreatmentChips .chip[data-treatment="${treatment}"]`).classList.add('active');
+
+  // Build feed inputs (which will restore saved feed values)
   buildFeedRabbitInputs(treatment);
-  // Clear water intake for a fresh record per treatment (as requested)
-  document.getElementById('r_water').value = '';
+
+  // Restore water for the new treatment (if saved) else clear it
+  const water = savedWaterValues[treatment];
+  document.getElementById('r_water').value = (water !== undefined && water !== null) ? water : '';
 }
 
 function selectWeightTreatment(treatment) {
   // Save current weight values before switching
   saveCurrentWeightValues();
+
   // Switch treatment
   selectedWeightTreatment = treatment;
   document.querySelectorAll('#weightTreatmentChips .chip').forEach(c => c.classList.remove('active'));
   document.querySelector(`#weightTreatmentChips .chip[data-treatment="${treatment}"]`).classList.add('active');
+
+  // Build weight inputs (restores saved weight values)
   buildWeightRabbitInputs(treatment);
-  // Clear water intake for a fresh record per treatment (as requested)
-  document.getElementById('r_water').value = '';
+
+  // Water is NOT changed when switching weight treatment
 }
 
 // Save feed values from current inputs into savedFeedValues[selectedFeedTreatment]
@@ -430,11 +439,11 @@ function saveCurrentFeedValues() {
   if (Object.keys(values).length > 0) {
     savedFeedValues[treatment] = values;
   } else {
-    delete savedFeedValues[treatment]; // clean up
+    delete savedFeedValues[treatment];
   }
 }
 
-// Save weight values from current inputs into savedWeightValues[selectedWeightTreatment]
+// Save weight values
 function saveCurrentWeightValues() {
   const treatment = selectedWeightTreatment;
   const container = document.getElementById('weightRabbitInputs');
@@ -454,17 +463,28 @@ function saveCurrentWeightValues() {
   }
 }
 
+// Save current water value for the current feed treatment
+function saveCurrentWaterValue() {
+  const treatment = selectedFeedTreatment;
+  const waterInput = document.getElementById('r_water');
+  const val = parseFloat(waterInput.value);
+  if (!isNaN(val) && val !== 0) {
+    savedWaterValues[treatment] = val;
+  } else {
+    delete savedWaterValues[treatment];
+  }
+}
+
 function buildFeedRabbitInputs(treatment) {
   const container = document.getElementById('feedRabbitInputs');
   const rabbits = treatmentRabbits[treatment];
-  // Build the HTML
   container.innerHTML = rabbits.map(r => `
     <div class="entry-row">
       <span style="width:60px;font-weight:700">R${r}</span>
       <input type="number" class="form-input rabbit-feed-input" id="feed_rabbit_${r}" placeholder="Feed (g)" step="1">
     </div>
   `).join('');
-  // Restore saved values for this treatment if any
+  // Restore saved feed values
   const saved = savedFeedValues[treatment];
   if (saved) {
     const inputs = container.querySelectorAll('.rabbit-feed-input');
@@ -543,9 +563,10 @@ function adj(id, delta) {
 }
 
 function submitLog(farm) {
-  // Before submitting, save any pending feed/weight values
+  // Save any pending data before submission
   saveCurrentFeedValues();
   saveCurrentWeightValues();
+  saveCurrentWaterValue();
 
   if (!document.getElementById('r_male').value) { alert('Enter number of males'); return; }
   if (!document.getElementById('r_female').value) { alert('Enter number of females'); return; }
@@ -566,7 +587,7 @@ function submitLog(farm) {
     }
   }
 
-  // collect weight entries from current inputs
+  // collect weight entries
   const weightEntries = [];
   for (let r = 1; r <= 20; r++) {
     const input = document.getElementById(`weight_rabbit_${r}`);
@@ -703,9 +724,10 @@ function startOver() {
     const hidden = document.getElementById(id); if (hidden) hidden.value = 0;
     const display = document.getElementById(id + '_d'); if (display) display.value = 0;
   });
-  // Clear saved values
+  // Reset saved values
   savedFeedValues = {};
   savedWeightValues = {};
+  savedWaterValues = {};
   // Rebuild inputs empty
   buildFeedRabbitInputs(selectedFeedTreatment);
   buildWeightRabbitInputs(selectedWeightTreatment);
