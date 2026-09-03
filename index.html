@@ -7,7 +7,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.11.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.11.1/firebase-database-compat.js"></script>
 <style>
-/* (same styles as before – keep compact) */
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--primary:#6366f1;--primary-light:#818cf8;--primary-dark:#4338ca;--success:#10b981;--warning:#f59e0b;--danger:#ef4444;--rose:#f43f5e;--bg:#f8fafc;--card:#ffffff;--border:#e2e8f0;--text:#0f172a;--slate:#64748b;--shadow:0 4px 12px rgba(0,0,0,0.06)}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);min-height:100vh;color:var(--text)}
@@ -523,7 +522,9 @@ function adj(id, delta) {
   hidden.value = current;
 }
 
+// ============ UPDATED SUBMIT LOG ============
 function submitLog(farm) {
+  // Save current data first
   saveCurrentFeedValues();
   saveCurrentWeightValues();
   saveCurrentWaterValue();
@@ -535,28 +536,27 @@ function submitLog(farm) {
 
   document.getElementById('loadingOverlay').classList.remove('hidden');
 
-  // Save feed for ALL rabbits in this treatment (including zeros)
-  const feedTreatment = selectedFeedTreatment;
-  const feedRabbits = treatmentRabbits[feedTreatment] || [];
-  const feedEntries = feedRabbits.map(r => {
-    const input = document.getElementById(`feed_rabbit_${r}`);
-    return {
-      rabbit: r,
-      feedGrams: input ? parseFloat(input.value) || 0 : 0
-    };
-  });
+  // ----- BUILD FEED ENTRIES FROM ALL TREATMENTS -----
+  const feedEntries = [];
+  for (const [treatment, rabbits] of Object.entries(treatmentRabbits)) {
+    const saved = savedFeedValues[treatment] || {};
+    rabbits.forEach(r => {
+      const val = parseFloat(saved[r]) || 0;
+      feedEntries.push({ rabbit: r, feedGrams: val });
+    });
+  }
 
-  // Weight: same
-  const weightTreatment = selectedWeightTreatment;
-  const weightRabbits = treatmentRabbits[weightTreatment] || [];
-  const weightEntries = weightRabbits.map(r => {
-    const input = document.getElementById(`weight_rabbit_${r}`);
-    return {
-      rabbit: r,
-      weightKg: input ? parseFloat(input.value) || 0 : 0
-    };
-  });
+  // ----- BUILD WEIGHT ENTRIES FROM ALL TREATMENTS -----
+  const weightEntries = [];
+  for (const [treatment, rabbits] of Object.entries(treatmentRabbits)) {
+    const saved = savedWeightValues[treatment] || {};
+    rabbits.forEach(r => {
+      const val = parseFloat(saved[r]) || 0;
+      weightEntries.push({ rabbit: r, weightKg: val });
+    });
+  }
 
+  // ----- LITTER ENTRIES -----
   const litterEntries = [];
   document.querySelectorAll('#litterEntries .entry-row').forEach(row => {
     const rabbit = row.querySelector('.rabbit-select').value;
@@ -565,6 +565,7 @@ function submitLog(farm) {
     if (litters > 0 || kits > 0) litterEntries.push({ rabbit, litters, kits });
   });
 
+  // ----- DEATH ENTRIES -----
   const deathEntries = [];
   document.querySelectorAll('#deathEntries .entry-row').forEach(row => {
     const category = row.querySelector('.death-category').value;
@@ -577,6 +578,9 @@ function submitLog(farm) {
   const dFemale = deathEntries.filter(d=>d.category==='female').reduce((s,d)=>s+d.count,0);
   const dWeaners = deathEntries.filter(d=>d.category==='weaner').reduce((s,d)=>s+d.count,0);
   const dKits = deathEntries.filter(d=>d.category==='kit').reduce((s,d)=>s+d.count,0);
+
+  // Water: sum from all treatments
+  const totalWater = Object.values(savedWaterValues).reduce((s, v) => s + (parseFloat(v) || 0), 0);
 
   const log = {
     id: 'L' + Date.now(),
@@ -591,12 +595,12 @@ function submitLog(farm) {
     rWeaners: parseInt(document.getElementById('r_weaners').value) || 0,
     rKits: parseInt(document.getElementById('r_kits').value) || 0,
     feedType: document.getElementById('r_feedtype').value,
-    feedTreatment: feedTreatment,
-    weightTreatment: weightTreatment,
-    feedEntries,
-    waterLitres: parseFloat(document.getElementById('r_water').value) || 0,
+    feedTreatment: selectedFeedTreatment,
+    weightTreatment: selectedWeightTreatment,
+    feedEntries: feedEntries,
+    waterLitres: totalWater,
     weekNum: parseInt(document.getElementById('r_weeknum').value) || null,
-    weightEntries,
+    weightEntries: weightEntries,
     litterEntries,
     deathEntries,
     dMale, dFemale, dWeaners, dKits,
@@ -623,6 +627,7 @@ function submitLog(farm) {
   });
 }
 
+// ============ UPDATED RECEIPT (groups by treatment) ============
 function showReceipt(log) {
   const dt = new Date(log.date);
   const dateStr = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
@@ -633,15 +638,30 @@ function showReceipt(log) {
   let body = rg('📅 Info', rr('Date',dateStr)+rr('Time',timeStr)+rr('Group',log.groupName)+rr('Worker',log.workerName)+rr('Farm','Rabbit Farm')+rr('Entry ID',log.id));
   body += rg('🐇 Animals Met', rr('Males',log.rMale)+rr('Females',log.rFemale)+rr('Weaners',log.rWeaners)+rr('Kits',log.rKits));
 
+  // Show treatments grouped
   if (log.feedEntries && log.feedEntries.length > 0) {
-    let feedStr = log.feedEntries.map(e => `R${e.rabbit}: ${e.feedGrams}g`).join('<br>');
-    body += rg('🌾 Feed per Rabbit', `<div class="receipt-row"><span>${feedStr}</span></div>`);
+    // Group feed entries by treatment
+    for (const [treatment, rabbits] of Object.entries(treatmentRabbits)) {
+      const entries = log.feedEntries.filter(e => rabbits.includes(e.rabbit));
+      const hasData = entries.some(e => e.feedGrams > 0);
+      if (!hasData) continue;
+      const feedStr = entries.map(e => `R${e.rabbit}: ${e.feedGrams}g`).join(', ');
+      body += rg(`🌾 Feed — ${treatment.toUpperCase()}`, `<div class="receipt-row"><span>${feedStr}</span></div>`);
+    }
   }
-  body += rg('💧 Water', rr('Group Intake (litres)',(log.waterLitres||0)+'L'));
+
   if (log.weightEntries && log.weightEntries.length > 0) {
-    let wStr = log.weightEntries.map(e => `R${e.rabbit}: ${e.weightKg}kg`).join('<br>');
-    body += rg('⚖️ Weight per Rabbit', `<div class="receipt-row"><span>${wStr}</span></div>`);
+    for (const [treatment, rabbits] of Object.entries(treatmentRabbits)) {
+      const entries = log.weightEntries.filter(e => rabbits.includes(e.rabbit));
+      const hasData = entries.some(e => e.weightKg > 0);
+      if (!hasData) continue;
+      const weightStr = entries.map(e => `R${e.rabbit}: ${e.weightKg}kg`).join(', ');
+      body += rg(`⚖️ Weight — ${treatment.toUpperCase()}`, `<div class="receipt-row"><span>${weightStr}</span></div>`);
+    }
   }
+
+  body += rg('💧 Water', rr('Total Group Intake (litres)',(log.waterLitres||0)+'L'));
+
   if (log.litterEntries && log.litterEntries.length > 0) {
     let lStr = log.litterEntries.map(e => `R${e.rabbit}: ${e.litters} litters, ${e.kits} kits`).join('<br>');
     body += rg('🐣 Litters & Kits per Rabbit', `<div class="receipt-row"><span>${lStr}</span></div>`);
